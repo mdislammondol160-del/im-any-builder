@@ -153,6 +153,7 @@ jobs:
           SOURCE_URL: ${{ steps.manifest.outputs.source_url }}
         run: |
           set -euo pipefail
+          mkdir -p app/src/main/assets
           rm -rf app/src/main/assets/*
           if [ -z "$SOURCE_URL" ]; then
             node scripts/prepare-web-project.mjs
