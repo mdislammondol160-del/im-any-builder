@@ -1,413 +1,284 @@
 name: Build IM Any Builder APK
 
-
-
 on:
-
   workflow_dispatch:
-  
     inputs:
-    
       source_url:
-      
         description: "HTTPS URL for the uploaded HTML or ZIP source"
-        
         required: false
-        
         type: string
-        
       app_name:
-      
         description: "APK application label"
-        
         required: true
-        
         default: "IM Any Builder"
-        
         type: string
-        
       version_name:
-      
         description: "Android version name"
-        
         required: true
-        
         default: "1.0.0"
-        
         type: string
-        
       version_code:
-      
         description: "Android version code"
-        
         required: true
-        
         default: "1"
-        
         type: string
-        
   repository_dispatch:
-  
     types: [build-apk]
-    
-
 
 permissions:
-
   contents: read
-  
-
 
 env:
-
   DEFAULT_APP_NAME: "IM Any Builder"
-  
   DEFAULT_VERSION_NAME: "1.0.0"
-  
   DEFAULT_VERSION_CODE: "1"
-  
   TEMP_TEST_SIGNING: "true"
-  
-
 
 jobs:
-
   build:
-  
     runs-on: ubuntu-latest
-    
     timeout-minutes: 30
-    
     steps:
-    
       - name: Check out worker
-      
         uses: actions/checkout@v4
-        
-
 
       - name: Set up JDK 17
-      
         uses: actions/setup-java@v4
-        
         with:
-        
           distribution: temurin
-          
           java-version: "17"
-          
           cache: gradle
-          
-
 
       - name: Set up Gradle
-      
         uses: gradle/actions/setup-gradle@v4
-        
         with:
-        
           gradle-version: "8.10.2"
-          
-
 
       - name: Resolve build manifest
-      
         id: manifest
-        
         env:
-        
           EVENT_NAME: ${{ github.event_name }}
-          
           DISPATCH_APP_NAME: ${{ github.event.client_payload.app_name }}
-          
           DISPATCH_PACKAGE_NAME: ${{ github.event.client_payload.package_name }}
-          
           DISPATCH_VERSION_NAME: ${{ github.event.client_payload.version_name }}
-          
           DISPATCH_VERSION_CODE: ${{ github.event.client_payload.version_code }}
-          
           DISPATCH_ORIENTATION: ${{ github.event.client_payload.orientation }}
-          
           DISPATCH_WEBVIEW_MODE: ${{ github.event.client_payload.webview_mode }}
-          
           DISPATCH_ICON_KEY: ${{ github.event.client_payload.icon_key }}
-          
           DISPATCH_IM_BRANDING: ${{ github.event.client_payload.im_branding }}
-          
           INPUT_APP_NAME: ${{ inputs.app_name }}
-          
           INPUT_PACKAGE_NAME: com.imanybuilder.app
-          
           INPUT_VERSION_NAME: ${{ inputs.version_name }}
-          
           INPUT_VERSION_CODE: ${{ inputs.version_code }}
-          
           DISPATCH_SOURCE_URL: ${{ github.event.client_payload.source_url }}
-          
           DISPATCH_BUILD_ID: ${{ github.event.client_payload.build_id }}
-          
           DISPATCH_CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
-          
           INPUT_SOURCE_URL: ${{ inputs.source_url }}
-          
         run: |
-        
           set -euo pipefail
-          
           app_name="${DISPATCH_APP_NAME:-}"
-          
           package_name="${DISPATCH_PACKAGE_NAME:-}"
-          
           version_name="${DISPATCH_VERSION_NAME:-}"
-          
           version_code="${DISPATCH_VERSION_CODE:-}"
-          
           source_url="${DISPATCH_SOURCE_URL:-}"
-          
           build_id="${DISPATCH_BUILD_ID:-}"
-          
           callback_url="${DISPATCH_CALLBACK_URL:-}"
-          
           orientation="${DISPATCH_ORIENTATION:-Auto}"
-          
           webview_mode="${DISPATCH_WEBVIEW_MODE:-Offline}"
-          
           icon_key="${DISPATCH_ICON_KEY:-brand/im-any-builder-default}"
-          
           im_branding="${DISPATCH_IM_BRANDING:-mandatory}"
-          
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-          
             app_name="${INPUT_APP_NAME:-$DEFAULT_APP_NAME}"
-            
             package_name="${INPUT_PACKAGE_NAME:-com.imanybuilder.app}"
-            
             version_name="${INPUT_VERSION_NAME:-$DEFAULT_VERSION_NAME}"
-            
             version_code="${INPUT_VERSION_CODE:-$DEFAULT_VERSION_CODE}"
-            
             source_url="${INPUT_SOURCE_URL:-}"
-            
           fi
-          
           app_name="${app_name:-$DEFAULT_APP_NAME}"
-          
           package_name="${package_name:-com.imanybuilder.app}"
-          
           version_name="${version_name:-$DEFAULT_VERSION_NAME}"
-          
           version_code="${version_code:-$DEFAULT_VERSION_CODE}"
-          
           case "$orientation" in Portrait|Landscape|Auto) ;; *) echo "orientation must be Portrait, Landscape, or Auto" >&2; exit 1;; esac
-          
           case "$webview_mode" in Online|Offline) ;; *) echo "webview_mode must be Online or Offline" >&2; exit 1;; esac
-          
           test "$im_branding" = "mandatory" || { echo "IM branding is mandatory" >&2; exit 1; }
-          
           if ! [[ "$version_code" =~ ^[0-9]+$ ]]; then echo "version_code must be numeric" >&2; exit 1; fi
-          
           {
-          
             echo "app_name<<EOF"
-            
             echo "$app_name"
-            
             echo "EOF"
-            
             echo "package_name=$package_name"
-            
             echo "version_name=$version_name"
-            
             echo "version_code=$version_code"
-            
             echo "orientation=$orientation"
-            
             echo "webview_mode=$webview_mode"
-            
             echo "icon_key=$icon_key"
-            
             echo "im_branding=$im_branding"
-            
             echo "source_url=$source_url"
-            
             echo "build_id=$build_id"
-            
             echo "callback_url=$callback_url"
-            
           } >> "$GITHUB_OUTPUT"
-          
-
 
       - name: Notify build started
-      
         if: steps.manifest.outputs.callback_url != '' && steps.manifest.outputs.build_id != ''
-        
         env:
-        
           CALLBACK_URL: ${{ steps.manifest.outputs.callback_url }}
-          
           BUILD_ID: ${{ steps.manifest.outputs.build_id }}
-          
           WORKER_SECRET: ${{ secrets.IM_ANY_BUILDER_CALLBACK_SECRET }}
-          
         run: |
-        
           set -euo pipefail
-          
-          test -n "$WORKER_SECRET" || { echo "Missing IM_ANY_BUILDER_CALLBACK_SECRET repository secret" >&2; exit 1; }
-          
+          payload="{\"build_id\":\"$BUILD_ID\",\"status\":\"building\"}"
           curl --fail --silent --show-error --retry 2 -X POST "$CALLBACK_URL" \
-          
             -H "Content-Type: application/json" \
-            
+            -H "Content-Length: ${#payload}" \
             -H "X-Worker-Secret: $WORKER_SECRET" \
-            
-            --data "{\"build_id\":\"$BUILD_ID\",\"status\":\"building\"}"
-            
-
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            --data "$payload"
 
       - name: Download source payload
-      
         if: steps.manifest.outputs.source_url != ''
-        
         env:
-        
           SOURCE_URL: ${{ steps.manifest.outputs.source_url }}
-          
         run: |
-        
           set -euo pipefail
-          
           case "$SOURCE_URL" in
-          
             http://*|https://*) ;;
-            
-            *
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            *) echo "source_url must use http or https" >&2; exit 1;;
+          esac
+          curl --fail --location --max-time 120 --proto '=https' --proto-redir '=https' "$SOURCE_URL" --output source-payload
+          test "$(wc -c < source-payload)" -le 26214400
+          file source-payload
+
+      - name: Prepare HTML asset
+        env:
+          SOURCE_URL: ${{ steps.manifest.outputs.source_url }}
+        run: |
+          set -euo pipefail
+          rm -rf app/src/main/assets/*
+          if [ -z "$SOURCE_URL" ]; then
+            node scripts/prepare-web-project.mjs
+          elif printf '%s' "$SOURCE_URL" | grep -Eiq '\.html?(\?|$)'; then
+            cp source-payload app/src/main/assets/index.html
+          else
+            SOURCE_ARCHIVE=source-payload node scripts/prepare-web-project.mjs
+          fi
+
+      - name: Prepare temporary test signing
+        if: env.TEMP_TEST_SIGNING == 'true'
+        run: |
+          set -euo pipefail
+          export TEST_KEYSTORE_PASSWORD="$(openssl rand -hex 24)"
+          export TEST_KEY_PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/im-any-builder-test.keystore" \
+            -storetype JKS -storepass "$TEST_KEYSTORE_PASSWORD" \
+            -keypass "$TEST_KEY_PASSWORD" -alias im-any-builder-test \
+            -keyalg RSA -keysize 2048 -validity 365 \
+            -dname "CN=IM Any Builder Test, OU=IM, O=IM Any Builder, L=Dhaka, ST=Dhaka, C=BD" >/dev/null 2>&1
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/im-any-builder-test.keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=$TEST_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=im-any-builder-test"
+            echo "ANDROID_KEY_PASSWORD=$TEST_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Restore production release keystore
+        if: env.TEMP_TEST_SIGNING != 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" || { echo "Missing ANDROID_KEYSTORE_B64 repository secret" >&2; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/im-any-builder-release.keystore"
+          test -s "$RUNNER_TEMP/im-any-builder-release.keystore"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/im-any-builder-release.keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build temporary or production signed release APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ env.ANDROID_KEYSTORE_PATH }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ env.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ env.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ env.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "Signing password is missing" >&2; exit 1; }
+          test -n "$ANDROID_KEY_ALIAS" || { echo "Signing alias is missing" >&2; exit 1; }
+          test -n "$ANDROID_KEY_PASSWORD" || { echo "Signing key password is missing" >&2; exit 1; }
+          gradle --no-daemon --stacktrace :app:assembleRelease \
+            -PappName="${{ steps.manifest.outputs.app_name }}" \
+            -PpackageName="${{ steps.manifest.outputs.package_name }}" \
+            -PversionName="${{ steps.manifest.outputs.version_name }}" \
+            -PversionCode="${{ steps.manifest.outputs.version_code }}" \
+            -Porientation="${{ steps.manifest.outputs.orientation }}" \
+            -PwebViewMode="${{ steps.manifest.outputs.webview_mode }}" \
+            -PimBranding="${{ steps.manifest.outputs.im_branding }}"
+
+      - name: Upload APK to IM Any Builder storage
+        if: success() && steps.manifest.outputs.callback_url != '' && steps.manifest.outputs.build_id != ''
+        id: upload_to_app
+        env:
+          CALLBACK_URL: ${{ steps.manifest.outputs.callback_url }}
+          BUILD_ID: ${{ steps.manifest.outputs.build_id }}
+          WORKER_SECRET: ${{ secrets.IM_ANY_BUILDER_CALLBACK_SECRET }}
+        run: |
+          set -euo pipefail
+          artifact_url="${CALLBACK_URL%/callback}/artifact"
+          artifact_size="$(stat -c '%s' app/build/outputs/apk/release/app-release.apk)"
+          curl --fail --silent --show-error --retry 2 -X POST "$artifact_url" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            -H "Content-Length: $artifact_size" \
+            -H "X-Worker-Secret: $WORKER_SECRET" \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            -H "X-Build-Id: $BUILD_ID" \
+            --data-binary @app/build/outputs/apk/release/app-release.apk > "$RUNNER_TEMP/artifact-response.json"
+          test "$(jq -r '.accepted' "$RUNNER_TEMP/artifact-response.json")" = "true"
+          echo "artifact_key=$(jq -r '.artifact_key' "$RUNNER_TEMP/artifact-response.json")" >> "$GITHUB_OUTPUT"
+          echo "artifact_url=$(jq -r '.artifact_url' "$RUNNER_TEMP/artifact-response.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Notify APK ready
+        if: success() && steps.manifest.outputs.callback_url != '' && steps.manifest.outputs.build_id != '' && steps.upload_to_app.outputs.artifact_key != ''
+        env:
+          CALLBACK_URL: ${{ steps.manifest.outputs.callback_url }}
+          BUILD_ID: ${{ steps.manifest.outputs.build_id }}
+          ARTIFACT_KEY: ${{ steps.upload_to_app.outputs.artifact_key }}
+          ARTIFACT_URL: ${{ steps.upload_to_app.outputs.artifact_url }}
+          WORKER_SECRET: ${{ secrets.IM_ANY_BUILDER_CALLBACK_SECRET }}
+        run: |
+          set -euo pipefail
+          payload="{\"build_id\":\"$BUILD_ID\",\"status\":\"ready\",\"artifact_key\":\"$ARTIFACT_KEY\",\"artifact_url\":\"$ARTIFACT_URL\"}"
+          curl --fail --silent --show-error --retry 2 -X POST "$CALLBACK_URL" \
+            -H "Content-Type: application/json" \
+            -H "Content-Length: ${#payload}" \
+            -H "X-Worker-Secret: $WORKER_SECRET" \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            --data "$payload"
+
+      - name: Notify build failed
+        if: failure() && steps.manifest.outputs.callback_url != '' && steps.manifest.outputs.build_id != ''
+        env:
+          CALLBACK_URL: ${{ steps.manifest.outputs.callback_url }}
+          BUILD_ID: ${{ steps.manifest.outputs.build_id }}
+          WORKER_SECRET: ${{ secrets.IM_ANY_BUILDER_CALLBACK_SECRET }}
+        run: |
+          set +e
+          payload="{\"build_id\":\"$BUILD_ID\",\"status\":\"failed\",\"error_message\":\"GitHub Actions Android build failed\"}"
+          curl --silent --show-error --retry 2 -X POST "$CALLBACK_URL" \
+            -H "Content-Type: application/json" \
+            -H "Content-Length: ${#payload}" \
+            -H "X-Worker-Secret: $WORKER_SECRET" \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            --data "$payload"
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: im-any-builder-test-${{ steps.manifest.outputs.version_name }}-${{ steps.manifest.outputs.version_code }}
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
