@@ -22,6 +22,7 @@ notify() {
       -H "Content-Type: application/json" \
       -H "Content-Length: ${#payload}" \
       -H "X-Worker-Secret: $WORKER_SECRET" \
+      -H "Authorization: Bearer $WORKER_SECRET" \
       --data "$payload" || true
   fi
 }
@@ -79,6 +80,7 @@ if [[ -n "$CALLBACK_URL" && -n "$BUILD_ID" && -n "$WORKER_SECRET" ]]; then
     -H "Content-Type: application/vnd.android.package-archive" \
     -H "Content-Length: $artifact_size" \
     -H "X-Worker-Secret: $WORKER_SECRET" \
+    -H "Authorization: Bearer $WORKER_SECRET" \
     -H "X-Build-Id: $BUILD_ID" \
     --data-binary @app/build/outputs/apk/release/app-release.apk > "$response_file"
   test "$(jq -r '.accepted' "$response_file")" = true
