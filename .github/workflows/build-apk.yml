@@ -1,0 +1,412 @@
+name: Build IM Any Builder APK
+
+
+
+on:
+
+  workflow_dispatch:
+  
+    inputs:
+    
+      source_url:
+      
+        description: "HTTPS URL for the uploaded HTML or ZIP source"
+        
+        required: false
+        
+        type: string
+        
+      app_name:
+      
+        description: "APK application label"
+        
+        required: true
+        
+        default: "IM Any Builder"
+        
+        type: string
+        
+      version_name:
+      
+        description: "Android version name"
+        
+        required: true
+        
+        default: "1.0.0"
+        
+        type: string
+        
+      version_code:
+      
+        description: "Android version code"
+        
+        required: true
+        
+        default: "1"
+        
+        type: string
+        
+  repository_dispatch:
+  
+    types: [build-apk]
+    
+
+
+permissions:
+
+  contents: read
+  
+
+
+env:
+
+  DEFAULT_APP_NAME: "IM Any Builder"
+  
+  DEFAULT_VERSION_NAME: "1.0.0"
+  
+  DEFAULT_VERSION_CODE: "1"
+  
+  TEMP_TEST_SIGNING: "true"
+  
+
+
+jobs:
+
+  build:
+  
+    runs-on: ubuntu-latest
+    
+    timeout-minutes: 30
+    
+    steps:
+    
+      - name: Check out worker
+      
+        uses: actions/checkout@v4
+        
+
+
+      - name: Set up JDK 17
+      
+        uses: actions/setup-java@v4
+        
+        with:
+        
+          distribution: temurin
+          
+          java-version: "17"
+          
+          cache: gradle
+          
+
+
+      - name: Set up Gradle
+      
+        uses: gradle/actions/setup-gradle@v4
+        
+        with:
+        
+          gradle-version: "8.10.2"
+          
+
+
+      - name: Resolve build manifest
+      
+        id: manifest
+        
+        env:
+        
+          EVENT_NAME: ${{ github.event_name }}
+          
+          DISPATCH_APP_NAME: ${{ github.event.client_payload.app_name }}
+          
+          DISPATCH_PACKAGE_NAME: ${{ github.event.client_payload.package_name }}
+          
+          DISPATCH_VERSION_NAME: ${{ github.event.client_payload.version_name }}
+          
+          DISPATCH_VERSION_CODE: ${{ github.event.client_payload.version_code }}
+          
+          DISPATCH_ORIENTATION: ${{ github.event.client_payload.orientation }}
+          
+          DISPATCH_WEBVIEW_MODE: ${{ github.event.client_payload.webview_mode }}
+          
+          DISPATCH_ICON_KEY: ${{ github.event.client_payload.icon_key }}
+          
+          DISPATCH_IM_BRANDING: ${{ github.event.client_payload.im_branding }}
+          
+          INPUT_APP_NAME: ${{ inputs.app_name }}
+          
+          INPUT_PACKAGE_NAME: com.imanybuilder.app
+          
+          INPUT_VERSION_NAME: ${{ inputs.version_name }}
+          
+          INPUT_VERSION_CODE: ${{ inputs.version_code }}
+          
+          DISPATCH_SOURCE_URL: ${{ github.event.client_payload.source_url }}
+          
+          DISPATCH_BUILD_ID: ${{ github.event.client_payload.build_id }}
+          
+          DISPATCH_CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
+          
+          INPUT_SOURCE_URL: ${{ inputs.source_url }}
+          
+        run: |
+        
+          set -euo pipefail
+          
+          app_name="${DISPATCH_APP_NAME:-}"
+          
+          package_name="${DISPATCH_PACKAGE_NAME:-}"
+          
+          version_name="${DISPATCH_VERSION_NAME:-}"
+          
+          version_code="${DISPATCH_VERSION_CODE:-}"
+          
+          source_url="${DISPATCH_SOURCE_URL:-}"
+          
+          build_id="${DISPATCH_BUILD_ID:-}"
+          
+          callback_url="${DISPATCH_CALLBACK_URL:-}"
+          
+          orientation="${DISPATCH_ORIENTATION:-Auto}"
+          
+          webview_mode="${DISPATCH_WEBVIEW_MODE:-Offline}"
+          
+          icon_key="${DISPATCH_ICON_KEY:-brand/im-any-builder-default}"
+          
+          im_branding="${DISPATCH_IM_BRANDING:-mandatory}"
+          
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          
+            app_name="${INPUT_APP_NAME:-$DEFAULT_APP_NAME}"
+            
+            package_name="${INPUT_PACKAGE_NAME:-com.imanybuilder.app}"
+            
+            version_name="${INPUT_VERSION_NAME:-$DEFAULT_VERSION_NAME}"
+            
+            version_code="${INPUT_VERSION_CODE:-$DEFAULT_VERSION_CODE}"
+            
+            source_url="${INPUT_SOURCE_URL:-}"
+            
+          fi
+          
+          app_name="${app_name:-$DEFAULT_APP_NAME}"
+          
+          package_name="${package_name:-com.imanybuilder.app}"
+          
+          version_name="${version_name:-$DEFAULT_VERSION_NAME}"
+          
+          version_code="${version_code:-$DEFAULT_VERSION_CODE}"
+          
+          case "$orientation" in Portrait|Landscape|Auto) ;; *) echo "orientation must be Portrait, Landscape, or Auto" >&2; exit 1;; esac
+          
+          case "$webview_mode" in Online|Offline) ;; *) echo "webview_mode must be Online or Offline" >&2; exit 1;; esac
+          
+          test "$im_branding" = "mandatory" || { echo "IM branding is mandatory" >&2; exit 1; }
+          
+          if ! [[ "$version_code" =~ ^[0-9]+$ ]]; then echo "version_code must be numeric" >&2; exit 1; fi
+          
+          {
+          
+            echo "app_name<<EOF"
+            
+            echo "$app_name"
+            
+            echo "EOF"
+            
+            echo "package_name=$package_name"
+            
+            echo "version_name=$version_name"
+            
+            echo "version_code=$version_code"
+            
+            echo "orientation=$orientation"
+            
+            echo "webview_mode=$webview_mode"
+            
+            echo "icon_key=$icon_key"
+            
+            echo "im_branding=$im_branding"
+            
+            echo "source_url=$source_url"
+            
+            echo "build_id=$build_id"
+            
+            echo "callback_url=$callback_url"
+            
+          } >> "$GITHUB_OUTPUT"
+          
+
+
+      - name: Notify build started
+      
+        if: steps.manifest.outputs.callback_url != '' && steps.manifest.outputs.build_id != ''
+        
+        env:
+        
+          CALLBACK_URL: ${{ steps.manifest.outputs.callback_url }}
+          
+          BUILD_ID: ${{ steps.manifest.outputs.build_id }}
+          
+          WORKER_SECRET: ${{ secrets.GITHUB_CALLBACK_SECRET }}
+          
+        run: |
+        
+          set -euo pipefail
+          
+          test -n "$WORKER_SECRET" || { echo "Missing GITHUB_CALLBACK_SECRET repository secret" >&2; exit 1; }
+          
+          curl --fail --silent --show-error --retry 2 -X POST "$CALLBACK_URL" \
+          
+            -H "Content-Type: application/json" \
+            
+            -H "X-Worker-Secret: $WORKER_SECRET" \
+            
+            --data "{\"build_id\":\"$BUILD_ID\",\"status\":\"building\"}"
+            
+
+
+      - name: Download source payload
+      
+        if: steps.manifest.outputs.source_url != ''
+        
+        env:
+        
+          SOURCE_URL: ${{ steps.manifest.outputs.source_url }}
+          
+        run: |
+        
+          set -euo pipefail
+          
+          case "$SOURCE_URL" in
+          
+            http://*|https://*) ;;
+            
+            *
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
