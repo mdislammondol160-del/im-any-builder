@@ -125,14 +125,20 @@ jobs:
           BUILD_ID: ${{ steps.manifest.outputs.build_id }}
           WORKER_SECRET: ${{ secrets.IM_ANY_BUILDER_CALLBACK_SECRET }}
         run: |
-          set -euo pipefail
+          set +e
           payload="{\"build_id\":\"$BUILD_ID\",\"status\":\"building\"}"
-          curl --fail --silent --show-error --retry 2 -X POST "$CALLBACK_URL" \
+          response_file="$RUNNER_TEMP/build-start-response.json"
+          curl --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 -o "$response_file" -w "%{http_code}" -X POST "$CALLBACK_URL" \
             -H "Content-Type: application/json" \
             -H "Content-Length: ${#payload}" \
             -H "X-Worker-Secret: $WORKER_SECRET" \
             -H "Authorization: Bearer $WORKER_SECRET" \
-            --data "$payload"
+            --data "$payload" > "$RUNNER_TEMP/build-start-status.txt"
+          status_code=$(cat "$RUNNER_TEMP/build-start-status.txt")
+          if [ "$status_code" != "200" ]; then
+            echo "Warning: initial building callback returned HTTP $status_code; continuing so the worker can compile and send a final callback."
+            cat "$response_file" || true
+          fi
 
       - name: Download source payload
         if: steps.manifest.outputs.source_url != ''
