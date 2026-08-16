@@ -88,3 +88,4 @@ if [[ -n "$CALLBACK_URL" && -n "$BUILD_ID" && -n "$WORKER_SECRET" ]]; then
 fi
 
 trap - ERR
+
